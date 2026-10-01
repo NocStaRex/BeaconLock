@@ -1,0 +1,39 @@
+# ============================================================
+# BeaconLock — Pinned Runtime Dependencies
+# ISRO SIH-2026 | PS-26169 | AlphaTrion (ID: 176697)
+# ============================================================
+# NOTE: Pinned to Python 3.13 64-bit compatible wheel versions.
+# numpy 1.26.x has no Py3.13 prebuilt wheel and requires GCC>=8.4
+# for source build (system MinGW is 6.3.0 — incompatible).
+# numpy 2.2.x is the first stable series shipping Py3.13 wheels.
+# All API used in BeaconLock is fully compatible with numpy 2.x.
+# ============================================================
+
+# Core numerics / CV
+numpy==2.2.6
+opencv-python==5.0.0.93
+
+# Kalman / tracking
+filterpy==1.4.5
+
+# GUI & live plots
+PySide6==6.7.2
+pyqtgraph==0.13.7
+
+# PDF report generation
+reportlab==4.2.2
+
+# Data logging / manipulation
+pandas==2.2.2
+
+# YAML scenario config
+pyyaml==6.0.2
+
+# AI re-acquisition (ONNX-packaged YOLOv8-nano — no full PyTorch in runtime)
+onnxruntime==1.18.1
+
+# Noise generation (S&P / Gaussian / Poisson)
+scikit-image==0.24.0
+
+# Optional: for synthetic training data generation
+# ultralytics==8.2.82   # uncomment in Phase 4 only (training machine)
