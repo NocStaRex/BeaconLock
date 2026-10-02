@@ -246,7 +246,7 @@ class Figure8Motion(MotionModel):
         amp_x: float = 350.0,
         amp_y: float = 175.0,
         omega: float = 0.4,
-        phi_y: float = math.pi / 2,
+        phi_y: float = 0.0,     # 0.0 → beacon starts at canvas centre (sin(0)=0)
     ) -> None:
         x0 = center_x + amp_x * math.sin(0.0)
         y0 = center_y + amp_y * math.sin(phi_y)
