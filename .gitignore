@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Local agent / IDE / Worktree caches
+.kilo/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Evaluation Logs, CSVs & Generated PDF Reports
+evaluation/logs/*.csv
+evaluation/reports/*.pdf
+*.csv
+*.pdf
+
+# PyInstaller / Build Artifacts (Phase 4 packaging)
+build/
+dist/
+*.spec
+!packaging/*.spec
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
