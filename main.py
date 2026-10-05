@@ -259,7 +259,19 @@ def run_headless_check() -> int:
 
 def launch_gui() -> int:
     """Start the full PySide6 desktop dashboard."""
+    import ctypes
+
+    # ── Windows AppUserModelID ── shows custom icon on taskbar (must be
+    # set before QApplication is created so the taskbar grouping works).
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "alphatrion.beaconlock.ps26169.v1"
+        )
+    except Exception:
+        pass  # non-Windows or ctypes unavailable — silently skip
+
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QIcon
     from PySide6.QtCore import Qt
 
     # High-DPI scaling (must be set before QApplication is created)
@@ -270,11 +282,16 @@ def launch_gui() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("BeaconLock")
     app.setOrganizationName("AlphaTrion")
-    app.setApplicationVersion("0.2.0")
+    app.setApplicationVersion("0.4.0")   # Phase 4
 
-    # Apply global dark stylesheet
-    from ui.dashboard import DARK_STYLESHEET
-    app.setStyleSheet(DARK_STYLESHEET)
+    # Custom icon (optical crosshair — generated in ui/assets/)
+    _icon_path = _ROOT / "ui" / "assets" / "icon.ico"
+    if _icon_path.exists():
+        app.setWindowIcon(QIcon(str(_icon_path)))
+
+    # Apply global industrial stylesheet
+    from ui.dashboard import LIGHT_STYLESHEET
+    app.setStyleSheet(LIGHT_STYLESHEET)
 
     # Launch main window
     from ui.dashboard import Dashboard
@@ -294,3 +311,4 @@ if __name__ == "__main__":
         sys.exit(run_headless_check())
     else:
         sys.exit(launch_gui())
+
