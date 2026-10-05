@@ -6,15 +6,15 @@ BeaconLock native desktop telemetry cockpit (PySide6 + PyQtGraph).
 Layout (3-panel horizontal split)
 ----------------------------------
 ┌──────────────────────────────────────────────────────────────────────┐
-│  LeftPanel (240px)  │  CenterPanel (640px)  │  RightPanel (340px)   │
-│  Controls           │  640×480 Camera View  │  Telemetry Plots       │
-├────────────────────┤├──────────────────────┤├──────────────────────-┤
-│  Source toggle      ││  Video feed label    ││  Error (px) curve     │
-│  Motion selector    ││  Crosshair overlay   ││  Slew rate curves     │
-│  Disturbance sliders││  State / error HUD   ││  FPS gauge            │
-│  Action buttons     ││                      ││                       │
-│  State badge        ││                      ││                       │
-└────────────────────┘└──────────────────────┘└───────────────────────┘
+│  LeftPanel (Scrollable 264px) │ CenterPanel (640px) │ RightPanel     │
+│  Controls                     │ 640×480 Camera View │ Telemetry Plots│
+├───────────────────────────────┼─────────────────────┼────────────────┤
+│  Source toggle                │ Video feed label    │ Error curve    │
+│  Motion selector              │ Crosshair overlay   │ Slew curve     │
+│  Disturbance sliders          │ State / error HUD   │ FPS gauge      │
+│  Action buttons (32px stack)  │                     │                │
+│  State badge + FPS row        │                     │                │
+└───────────────────────────────┴─────────────────────┴────────────────┘
 
 Threading contract
 ------------------
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 import math
-import tempfile
+import os
 import time
 from collections import deque
 from pathlib import Path
@@ -43,7 +43,7 @@ from PySide6.QtGui import QImage, QPixmap, QIcon
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QFileDialog, QGroupBox,
     QHBoxLayout, QLabel, QPushButton, QRadioButton,
-    QSizePolicy, QSlider, QVBoxLayout, QWidget, QMainWindow,
+    QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget, QMainWindow,
     QMessageBox, QStatusBar, QFrame,
 )
 
@@ -59,220 +59,331 @@ from ui.plots_panel import PlotsPanel
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Industrial Clean Aerospace Theme
-# High-contrast, crisp, mission-control palette
-# Primary: #f8fafc (surface) / #0f172a (text) / #0284c7 (accent)
+# Cohesive Modern Aerospace Obsidian Theme
+# Palette:
+#   Main Window Background: #0b0f19 (Deep Aerospace Obsidian)
+#   Panel Surfaces:        #111827 (Seamless slate)
+#   Panel Borders:         1px solid #1f2937, 8px rounded corners
+#   Primary Text:          #f8fafc (crisp slate-50)
+#   Secondary Hints:       #94a3b8 (slate-400)
+#   Inputs / Combos:       #1e293b with #334155 border
+#   Accent:                #0284c7 (Vibrant Sky) / #38bdf8
 # ─────────────────────────────────────────────────────────────────────────────
 
-LIGHT_STYLESHEET = """
-/* ── Root ──────────────────────────────────────────────────────────── */
+AEROSPACE_THEME_STYLESHEET = """
+/* ── Root Window & Base Widgets ────────────────────────────────────── */
 QMainWindow, QWidget {
-    background-color: #f1f5f9;
-    color: #0f172a;
-    font-family: "Segoe UI", "Inter", "Helvetica Neue", sans-serif;
+    background-color: #0b0f19;
+    color: #f8fafc;
+    font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
     font-size: 12px;
 }
 
-/* ── Group boxes ────────────────────────────────────────────────────── */
+/* ── Panel Surfaces (QGroupBox) ────────────────────────────────────── */
 QGroupBox {
-    background-color: #ffffff;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    margin-top: 18px;
-    padding: 10px 8px 8px 8px;
+    background-color: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    margin-top: 13px;
+    padding: 8px 6px 6px 6px;
     font-size: 10px;
     font-weight: bold;
     letter-spacing: 1.5px;
-    color: #475569;
+    color: #94a3b8;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 10px;
-    top: 3px;
+    left: 8px;
+    top: 1px;
     padding: 0 5px;
-    background-color: #f1f5f9;
+    background-color: #111827;
+    border-radius: 3px;
+    color: #38bdf8;
 }
 
-/* ── Radio buttons ──────────────────────────────────────────────────── */
+/* ── Radio Buttons ─────────────────────────────────────────────────── */
 QRadioButton {
-    color: #334155;
-    spacing: 7px;
-    font-size: 12px;
-    padding: 2px 0;
+    color: #e2e8f0;
+    spacing: 6px;
+    font-size: 11px;
+    padding: 1px 0;
 }
 QRadioButton::indicator {
-    width: 15px; height: 15px;
+    width: 14px;
+    height: 14px;
 }
 QRadioButton::indicator:unchecked {
-    border: 2px solid #94a3b8;
-    border-radius: 8px;
-    background: #ffffff;
+    border: 2px solid #475569;
+    border-radius: 7px;
+    background: #1e293b;
 }
 QRadioButton::indicator:checked {
     background: #0284c7;
-    border: 2px solid #0284c7;
-    border-radius: 8px;
+    border: 2px solid #38bdf8;
+    border-radius: 7px;
 }
 
-/* ── Combo boxes ────────────────────────────────────────────────────── */
+/* ── Dropdowns (QComboBox) ─────────────────────────────────────────── */
 QComboBox {
-    background-color: #ffffff;
-    border: 1px solid #94a3b8;
+    background-color: #1e293b;
+    border: 1px solid #334155;
     border-radius: 5px;
-    padding: 5px 10px;
-    min-height: 34px;
-    color: #0f172a;
+    padding: 3px 8px;
+    min-height: 30px;
+    max-height: 30px;
+    color: #f8fafc;
     font-size: 12px;
     font-weight: 600;
-    selection-background-color: #0284c7;
 }
-QComboBox:hover { border-color: #0284c7; }
-QComboBox:focus { border: 2px solid #0284c7; }
+QComboBox:hover {
+    border-color: #0284c7;
+}
+QComboBox:focus {
+    border: 1px solid #38bdf8;
+}
 QComboBox::drop-down {
     border: none;
-    width: 22px;
+    width: 20px;
 }
 QComboBox::down-arrow {
     image: none;
     border-left: 5px solid transparent;
     border-right: 5px solid transparent;
-    border-top: 6px solid #64748b;
-    width: 0; height: 0;
+    border-top: 5px solid #94a3b8;
+    width: 0;
+    height: 0;
     margin-right: 6px;
 }
 QComboBox QAbstractItemView {
-    background-color: #ffffff;
-    border: 1px solid #cbd5e1;
-    color: #0f172a;
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
     font-size: 12px;
     font-weight: 600;
-    selection-background-color: #bfdbfe;
-    selection-color: #1e3a8a;
+    selection-background-color: #0284c7;
+    selection-color: #ffffff;
     padding: 4px;
 }
 
-/* ── Sliders ────────────────────────────────────────────────────────── */
+/* ── Sliders ───────────────────────────────────────────────────────── */
 QSlider::groove:horizontal {
-    height: 5px;
-    background: #e2e8f0;
-    border-radius: 3px;
+    height: 4px;
+    background: #1f2937;
+    border-radius: 2px;
 }
 QSlider::handle:horizontal {
-    width: 16px; height: 16px;
-    margin: -6px 0;
-    border-radius: 8px;
-    background: #0284c7;
-    border: 2px solid #ffffff;
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+    background: #38bdf8;
+    border: 2px solid #0b0f19;
+}
+QSlider::handle:horizontal:hover {
+    background: #7dd3fc;
 }
 QSlider::sub-page:horizontal {
     background: #0284c7;
-    border-radius: 3px;
+    border-radius: 2px;
 }
 
-/* ── Buttons — base ─────────────────────────────────────────────────── */
+/* ── Buttons — Base ────────────────────────────────────────────────── */
 QPushButton {
-    background-color: #f8fafc;
-    color: #334155;
-    border: 1px solid #cbd5e1;
+    background-color: #1e293b;
+    color: #f8fafc;
+    border: 1px solid #334155;
     border-radius: 5px;
-    padding: 0 12px;
-    min-height: 36px;
+    padding: 0 10px;
+    min-height: 32px;
+    max-height: 32px;
     font-size: 12px;
     font-weight: 600;
 }
-QPushButton:hover { background-color: #e2e8f0; border-color: #94a3b8; }
-QPushButton:pressed { background-color: #cbd5e1; }
-QPushButton:disabled { color: #94a3b8; background-color: #f1f5f9; border-color: #e2e8f0; }
+QPushButton:hover {
+    background-color: #334155;
+    border-color: #475569;
+}
+QPushButton:pressed {
+    background-color: #0f172a;
+}
+QPushButton:disabled {
+    color: #475569;
+    background-color: #111827;
+    border-color: #1f2937;
+}
 
-/* START button — sky-600 */
+/* START button: Solid Vibrant Sky #0284c7, text #ffffff bold */
 QPushButton#btn_start {
     background-color: #0284c7;
     color: #ffffff;
-    border: none;
+    font-weight: bold;
+    border: 1px solid #0284c7;
 }
-QPushButton#btn_start:hover  { background-color: #0369a1; }
-QPushButton#btn_start:pressed{ background-color: #075985; }
+QPushButton#btn_start:hover {
+    background-color: #0369a1;
+    border-color: #38bdf8;
+}
+QPushButton#btn_start:disabled {
+    background-color: #1e293b;
+    color: #475569;
+    border-color: #1f2937;
+}
 
-/* PAUSE button — amber-600 */
+/* PAUSE button: Amber #d97706, text #ffffff bold */
 QPushButton#btn_pause {
     background-color: #d97706;
     color: #ffffff;
-    border: none;
+    font-weight: bold;
+    border: 1px solid #d97706;
 }
-QPushButton#btn_pause:hover  { background-color: #b45309; }
-QPushButton#btn_pause:disabled { background-color: #fef3c7; color: #a16207; border: none; }
+QPushButton#btn_pause:hover {
+    background-color: #b45309;
+    border-color: #f59e0b;
+}
+QPushButton#btn_pause:disabled {
+    background-color: #1e293b;
+    color: #475569;
+    border-color: #1f2937;
+}
 
-/* RESET button — slate-500 */
+/* RESET button: Slate #475569, text #ffffff */
 QPushButton#btn_reset {
-    background-color: #64748b;
+    background-color: #475569;
     color: #ffffff;
-    border: none;
+    border: 1px solid #475569;
 }
-QPushButton#btn_reset:hover { background-color: #475569; }
+QPushButton#btn_reset:hover {
+    background-color: #334155;
+    border-color: #64748b;
+}
 
-/* Inject blind spot — red outline */
+/* Inject Blind Spot: Subtle dark red container with #ef4444 border & text */
 QPushButton#btn_occlude {
-    background-color: #fee2e2;
-    color: #b91c1c;
-    border: 1.5px solid #ef4444;
+    background-color: #271418;
+    color: #f87171;
+    border: 1px solid #ef4444;
 }
-QPushButton#btn_occlude:hover { background-color: #fecaca; border-color: #dc2626; }
+QPushButton#btn_occlude:hover {
+    background-color: #3b141a;
+    border-color: #fca5a5;
+    color: #fca5a5;
+}
+QPushButton#btn_occlude:disabled {
+    background-color: #181215;
+    color: #5c242c;
+    border-color: #381a20;
+}
 
-/* Export PDF — dark */
+/* Export Audit PDF: Dark slate #1e293b with #cbd5e1 text */
 QPushButton#btn_pdf {
     background-color: #1e293b;
-    color: #ffffff;
-    border: none;
+    color: #cbd5e1;
+    border: 1px solid #334155;
 }
-QPushButton#btn_pdf:hover { background-color: #0f172a; }
-QPushButton#btn_pdf:disabled { background-color: #e2e8f0; color: #94a3b8; }
+QPushButton#btn_pdf:hover {
+    background-color: #334155;
+    color: #f8fafc;
+    border-color: #475569;
+}
+QPushButton#btn_pdf:disabled {
+    background-color: #111827;
+    color: #475569;
+    border-color: #1f2937;
+}
 
-/* Browse button */
+/* Browse MP4 button */
 QPushButton#btn_browse {
-    background-color: #f0f9ff;
-    color: #0369a1;
-    border: 1.5px solid #7dd3fc;
+    background-color: #1e293b;
+    color: #38bdf8;
+    border: 1px solid #0284c7;
+    min-height: 26px;
+    max-height: 26px;
+    font-size: 11px;
 }
-QPushButton#btn_browse:hover { background-color: #e0f2fe; }
-QPushButton#btn_browse:disabled { color: #94a3b8; border-color: #e2e8f0; background: #f8fafc; }
+QPushButton#btn_browse:hover {
+    background-color: #0369a1;
+    color: #ffffff;
+}
+QPushButton#btn_browse:disabled {
+    color: #475569;
+    border-color: #1f2937;
+    background: #111827;
+}
 
-/* ── State badge ─────────────────────────────────────────────────────── */
+/* ── State Badge ───────────────────────────────────────────────────── */
 QLabel#state_badge {
     border-radius: 6px;
-    padding: 7px 12px;
-    font-family: "Consolas", "Courier New", monospace;
-    font-size: 13px;
+    padding: 4px 8px;
+    font-family: "Consolas", monospace;
+    font-size: 12px;
     font-weight: bold;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
     text-align: center;
 }
 
-/* ── Status bar ──────────────────────────────────────────────────────── */
+/* ── Status Bar ────────────────────────────────────────────────────── */
 QStatusBar {
-    background-color: #0f172a;
+    background-color: #0b0f19;
     color: #94a3b8;
+    border-top: 1px solid #1f2937;
     font-size: 11px;
     font-family: "Consolas", monospace;
 }
 
-/* ── Separator ───────────────────────────────────────────────────────── */
-QFrame[frameShape="4"], QFrame[frameShape="5"] {
-    color: #e2e8f0;
+/* ── Left ScrollArea & Minimal Scrollbar ───────────────────────────── */
+QScrollArea#left_scroll {
+    background: transparent;
+    border: none;
+}
+QWidget#left_content {
+    background: transparent;
+}
+QScrollBar:vertical {
+    background-color: #0b0f19;
+    width: 6px;
+    margin: 0px;
+    border-radius: 3px;
+}
+QScrollBar::handle:vertical {
+    background-color: #374151;
+    min-height: 24px;
+    border-radius: 3px;
+}
+QScrollBar::handle:vertical:hover {
+    background-color: #4b5563;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+    background: none;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
 }
 """
 
+# Aliases for compatibility
+DARK_STYLESHEET = AEROSPACE_THEME_STYLESHEET
+LIGHT_STYLESHEET = AEROSPACE_THEME_STYLESHEET
+
 # ── State badge colours ─────────────────────────────────────────────────────
 BADGE_STYLES: dict[str, str] = {
-    "SEARCHING":   "background:#dbeafe; color:#1d4ed8; border:1.5px solid #3b82f6;",
-    "ACQUIRING":   "background:#ffedd5; color:#c2410c; border:1.5px solid #f97316;",
-    "TRACKING":    "background:#dcfce7; color:#15803d; border:1.5px solid #22c55e;",
-    "LOST":        "background:#fee2e2; color:#b91c1c; border:1.5px solid #ef4444;",
-    "REACQUIRING": "background:#fef9c3; color:#a16207; border:1.5px solid #eab308;",
+    "SEARCHING":   "background:#0f2238; color:#38bdf8; border:1px solid #0284c7;",
+    "ACQUIRING":   "background:#341a06; color:#fb923c; border:1px solid #ea580c;",
+    "TRACKING":    "background:#0a2918; color:#4ade80; border:1px solid #16a34a;",
+    "LOST":        "background:#3a0d14; color:#f87171; border:1px solid #dc2626;",
+    "REACQUIRING": "background:#332506; color:#facc15; border:1px solid #ca8a04;",
+    "IDLE":        "background:#111827; color:#64748b; border:1px solid #1f2937;",
 }
 
 # ── Icon path ───────────────────────────────────────────────────────────────
 _ICON_PATH = Path(__file__).parent / "assets" / "icon.ico"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LOGS_DIR = PROJECT_ROOT / "evaluation" / "logs"
+REPORTS_DIR = PROJECT_ROOT / "evaluation" / "reports"
+
+os.makedirs(LOGS_DIR, exist_ok=True)
+os.makedirs(REPORTS_DIR, exist_ok=True)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -292,7 +403,7 @@ def _sep() -> QFrame:
     """Horizontal separator line."""
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet("color: #e2e8f0;")
+    line.setStyleSheet("color: #1f2937;")
     return line
 
 
@@ -309,8 +420,8 @@ class Dashboard(QMainWindow):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("BeaconLock — ISRO PAT Simulator  |  AlphaTrion  |  SIH-2026")
-        self.setMinimumSize(1240, 760)
-        self.resize(1300, 820)
+        self.setMinimumSize(1240, 740)
+        self.resize(1280, 780)
 
         # Set window icon
         if _ICON_PATH.exists():
@@ -320,7 +431,10 @@ class Dashboard(QMainWindow):
         self._source:    Optional[FrameSource]    = None
         self._fl_logger: Optional[FrameLogger]    = None
         self._session_start = 0.0
-        self._log_dir = Path(tempfile.mkdtemp(prefix="beaconlock_"))
+        self._logs_dir = LOGS_DIR
+        self._reports_dir = REPORTS_DIR
+        os.makedirs(self._logs_dir, exist_ok=True)
+        os.makedirs(self._reports_dir, exist_ok=True)
 
         # P95 error tracking
         self._error_history: deque[float] = deque(maxlen=300)
@@ -337,13 +451,19 @@ class Dashboard(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
-        root.setContentsMargins(10, 10, 10, 10)
-        root.setSpacing(10)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
+        # ── Left panel (Scrollable) ────────────────────────────────
         root.addWidget(self._build_left_panel())
+
+        # ── Center panel (640x480 Camera Feed) ─────────────────────
         root.addWidget(self._build_center_panel(), stretch=1)
+
+        # ── Right panel (Telemetry plots) ──────────────────────────
         root.addWidget(self._build_right_panel())
 
+        # ── Status bar ─────────────────────────────────────────────
         self._status = QStatusBar()
         self.setStatusBar(self._status)
         self._status.showMessage("BeaconLock ready — configure source and press  ▶ START")
@@ -351,43 +471,45 @@ class Dashboard(QMainWindow):
     # ── Left panel ───────────────────────────────────────────────────────────
 
     def _build_left_panel(self) -> QWidget:
-        panel = QWidget()
-        panel.setFixedWidth(248)
-        panel.setStyleSheet("background: transparent;")
-        vlay = QVBoxLayout(panel)
-        vlay.setContentsMargins(0, 0, 0, 0)
-        vlay.setSpacing(8)
+        content = QWidget()
+        content.setObjectName("left_content")
+        vlay = QVBoxLayout(content)
+        vlay.setContentsMargins(6, 4, 8, 4)
+        vlay.setSpacing(5)
 
-        # Logo
+        # Logo & Subtitle
         logo = QLabel("🔒  BEACONLOCK")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setStyleSheet(
-            "font: bold 15px 'Segoe UI'; color: #0284c7; "
-            "padding: 8px 4px 4px 4px;"
+            "font: bold 14px 'Segoe UI'; color: #38bdf8; "
+            "padding: 2px 0 0 0;"
         )
         vlay.addWidget(logo)
-        sub = QLabel("Virtual PAT Simulator — ISRO SIH-2026 | PS-26169")
+        sub = QLabel("Virtual PAT Simulator — ISRO PS-26169")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub.setWordWrap(True)
         sub.setStyleSheet("font-size: 10px; color: #64748b; padding-bottom: 2px;")
         vlay.addWidget(sub)
         vlay.addWidget(_sep())
 
-        # Source
+        # Input Source Group
         src_grp = QGroupBox("INPUT SOURCE")
         src_lay = QVBoxLayout(src_grp)
-        src_lay.setSpacing(6)
+        src_lay.setContentsMargins(6, 8, 6, 6)
+        src_lay.setSpacing(4)
         self._rb_mode_a = QRadioButton("Mode A — Synthetic Simulator")
         self._rb_mode_b = QRadioButton("Mode B — Evaluator MP4")
         self._rb_mode_a.setChecked(True)
         src_lay.addWidget(self._rb_mode_a)
         src_lay.addWidget(self._rb_mode_b)
+
         self._btn_browse = QPushButton("📂  Browse MP4…")
         self._btn_browse.setObjectName("btn_browse")
         self._btn_browse.setEnabled(False)
+        self._btn_browse.setFixedHeight(26)
         self._mp4_path: Optional[str] = None
         self._lbl_mp4 = QLabel("No file selected")
-        self._lbl_mp4.setStyleSheet("color:#94a3b8; font-size:10px;")
+        self._lbl_mp4.setStyleSheet("color:#64748b; font-size:10px;")
         self._lbl_mp4.setWordWrap(True)
         src_lay.addWidget(self._btn_browse)
         src_lay.addWidget(self._lbl_mp4)
@@ -395,27 +517,33 @@ class Dashboard(QMainWindow):
         self._rb_mode_a.toggled.connect(lambda on: self._cmb_motion_grp.setVisible(on))
         vlay.addWidget(src_grp)
 
-        # Motion
+        # Beacon Motion Group
         self._cmb_motion_grp = QGroupBox("BEACON MOTION")
         mot_lay = QVBoxLayout(self._cmb_motion_grp)
+        mot_lay.setContentsMargins(6, 8, 6, 6)
+        mot_lay.setSpacing(3)
         self._cmb_motion = QComboBox()
         self._cmb_motion.addItems(["straight_line", "circular", "figure_8", "random_walk"])
         self._cmb_motion.setCurrentIndex(1)
+        self._cmb_motion.setFixedHeight(30)
         mot_lay.addWidget(self._cmb_motion)
         vlay.addWidget(self._cmb_motion_grp)
 
-        # Disturbances
+        # Disturbances Group
         dist_grp = QGroupBox("DISTURBANCES")
         dist_lay = QVBoxLayout(dist_grp)
-        dist_lay.setSpacing(5)
+        dist_lay.setContentsMargins(6, 8, 6, 6)
+        dist_lay.setSpacing(4)
 
-        # Noise
+        # Noise σ
         row_n = QHBoxLayout()
-        row_n.addWidget(QLabel("Noise σ:"))
+        lbl_n = QLabel("Noise σ:")
+        lbl_n.setStyleSheet("color:#cbd5e1; font-weight:600; font-size:11px;")
+        row_n.addWidget(lbl_n)
         self._lbl_noise = QLabel("0 px")
         self._lbl_noise.setStyleSheet(
-            "background:#f0f9ff; color:#0369a1; border:1px solid #7dd3fc; "
-            "border-radius:4px; padding:2px 7px; font:bold 11px 'Consolas';"
+            "background:#0b0f19; color:#38bdf8; border:1px solid #1e3a5f; "
+            "border-radius:4px; padding:2px 6px; font:bold 11px 'Consolas';"
         )
         self._lbl_noise.setFixedWidth(46)
         row_n.addStretch()
@@ -424,13 +552,15 @@ class Dashboard(QMainWindow):
         self._sld_noise = self._make_slider(0, 20, 0)
         dist_lay.addWidget(self._sld_noise)
 
-        # Jitter
+        # Jitter px
         row_j = QHBoxLayout()
-        row_j.addWidget(QLabel("Jitter:"))
+        lbl_j = QLabel("Jitter:")
+        lbl_j.setStyleSheet("color:#cbd5e1; font-weight:600; font-size:11px;")
+        row_j.addWidget(lbl_j)
         self._lbl_jitter = QLabel("0 px")
         self._lbl_jitter.setStyleSheet(
-            "background:#f0f9ff; color:#0369a1; border:1px solid #7dd3fc; "
-            "border-radius:4px; padding:2px 7px; font:bold 11px 'Consolas';"
+            "background:#0b0f19; color:#38bdf8; border:1px solid #1e3a5f; "
+            "border-radius:4px; padding:2px 6px; font:bold 11px 'Consolas';"
         )
         self._lbl_jitter.setFixedWidth(46)
         row_j.addStretch()
@@ -439,12 +569,13 @@ class Dashboard(QMainWindow):
         self._sld_jitter = self._make_slider(0, 20, 0)
         dist_lay.addWidget(self._sld_jitter)
 
-        # Atmosphere
+        # Atmosphere Dropdown (proper vertical spacing and height)
         atm_lbl = QLabel("Atmosphere:")
-        atm_lbl.setStyleSheet("font-weight:600; color:#334155;")
+        atm_lbl.setStyleSheet("font-weight:600; color:#cbd5e1; font-size:11px; margin-top:2px;")
         dist_lay.addWidget(atm_lbl)
         self._cmb_atmos = QComboBox()
         self._cmb_atmos.addItems(["clear", "haze", "fog", "rain", "low_light"])
+        self._cmb_atmos.setFixedHeight(30)
         dist_lay.addWidget(self._cmb_atmos)
 
         vlay.addWidget(dist_grp)
@@ -452,21 +583,31 @@ class Dashboard(QMainWindow):
         self._sld_noise.valueChanged.connect(lambda v: self._lbl_noise.setText(f"{v} px"))
         self._sld_jitter.valueChanged.connect(lambda v: self._lbl_jitter.setText(f"{v} px"))
 
-        # Session controls
+        # Session Controls (Explicit 32px height buttons in clean 5px stack)
         act_grp = QGroupBox("SESSION CONTROL")
         act_lay = QVBoxLayout(act_grp)
-        act_lay.setSpacing(6)
+        act_lay.setContentsMargins(6, 8, 6, 6)
+        act_lay.setSpacing(5)
 
         self._btn_start   = QPushButton("▶  START")
         self._btn_start.setObjectName("btn_start")
+        self._btn_start.setFixedHeight(32)
+
         self._btn_pause   = QPushButton("⏸  PAUSE")
         self._btn_pause.setObjectName("btn_pause")
+        self._btn_pause.setFixedHeight(32)
+
         self._btn_reset   = QPushButton("↺  RESET")
         self._btn_reset.setObjectName("btn_reset")
-        self._btn_occlude = QPushButton("⊘  Inject Blind Spot  (30f)")
+        self._btn_reset.setFixedHeight(32)
+
+        self._btn_occlude = QPushButton("⊘  Inject Blind Spot (30f)")
         self._btn_occlude.setObjectName("btn_occlude")
+        self._btn_occlude.setFixedHeight(32)
+
         self._btn_pdf     = QPushButton("📄  Export Audit PDF")
         self._btn_pdf.setObjectName("btn_pdf")
+        self._btn_pdf.setFixedHeight(32)
 
         for btn in (self._btn_start, self._btn_pause, self._btn_reset,
                     self._btn_occlude, self._btn_pdf):
@@ -474,68 +615,81 @@ class Dashboard(QMainWindow):
 
         vlay.addWidget(act_grp)
 
-        # State badge
+        # State Badge + Live FPS side-by-side row
+        stat_row = QHBoxLayout()
+        stat_row.setSpacing(6)
+
         self._badge = QLabel("IDLE")
         self._badge.setObjectName("state_badge")
         self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._badge.setStyleSheet(
-            "background:#f1f5f9; color:#64748b; border:1.5px solid #cbd5e1; "
-            "border-radius:6px; font:bold 13px 'Consolas'; padding:7px; letter-spacing:2px;"
-        )
-        vlay.addWidget(self._badge)
+        self._badge.setFixedHeight(28)
+        self._badge.setStyleSheet(BADGE_STYLES["IDLE"])
 
-        # FPS live readout
         self._lbl_fps = QLabel("FPS: —")
         self._lbl_fps.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl_fps.setFixedHeight(28)
         self._lbl_fps.setStyleSheet(
-            "color:#15803d; font:bold 13px 'Consolas'; "
-            "background:#f0fdf4; border:1px solid #bbf7d0; "
-            "border-radius:4px; padding:4px;"
+            "color:#4ade80; font:bold 11px 'Consolas', monospace; "
+            "background:#0b1a13; border:1px solid #14532d; "
+            "border-radius:5px; padding:2px;"
         )
-        vlay.addWidget(self._lbl_fps)
 
-        vlay.addStretch()
+        stat_row.addWidget(self._badge, 2)
+        stat_row.addWidget(self._lbl_fps, 1)
+        vlay.addLayout(stat_row)
 
-        # Session info
+        # Session info caption
         self._lbl_session = QLabel("No active session")
         self._lbl_session.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._lbl_session.setWordWrap(True)
-        self._lbl_session.setStyleSheet("color:#94a3b8; font-size:10px;")
+        self._lbl_session.setStyleSheet("color:#64748b; font-size:10px; margin-top:2px;")
         vlay.addWidget(self._lbl_session)
 
-        return panel
+        # Wrap content in a clean QScrollArea
+        scroll = QScrollArea()
+        scroll.setObjectName("left_scroll")
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setFixedWidth(264)
+        scroll.setWidget(content)
+
+        return scroll
 
     # ── Center panel ─────────────────────────────────────────────────────────
 
     def _build_center_panel(self) -> QWidget:
         grp = QGroupBox("CAMERA VIEW  [640 × 480 px  |  FOV 4° × 3°  |  0.00625 °/px]")
+        grp.setObjectName("center_panel")
         lay = QVBoxLayout(grp)
+        lay.setContentsMargins(10, 14, 10, 10)
+        lay.setSpacing(10)
         lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._video_label = QLabel()
         self._video_label.setFixedSize(640, 480)
         self._video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._video_label.setStyleSheet("background:#0f172a; border:1px solid #cbd5e1; border-radius:3px;")
+        self._video_label.setStyleSheet("background:#050811; border:1px solid #1f2937; border-radius:6px;")
         self._show_placeholder()
         lay.addWidget(self._video_label)
 
         # Metrics bar
         metrics_row = QHBoxLayout()
-        metrics_row.setSpacing(12)
+        metrics_row.setSpacing(10)
 
         def _metric_lbl(text: str, color: str) -> QLabel:
             lbl = QLabel(text)
             lbl.setStyleSheet(
-                f"color:{color}; font:bold 11px 'Consolas'; "
-                f"background:#f8fafc; border:1px solid #e2e8f0; "
-                f"border-radius:4px; padding:3px 8px;"
+                f"color:{color}; font:bold 11px 'Consolas', monospace; "
+                f"background:#0d1322; border:1px solid #1f2937; "
+                f"border-radius:5px; padding:4px 10px;"
             )
             return lbl
 
-        self._lbl_err    = _metric_lbl("Error: — px", "#0284c7")
-        self._lbl_mrad   = _metric_lbl("— mrad", "#475569")
-        self._lbl_p95    = _metric_lbl("P95: — px", "#7c3aed")
-        self._lbl_frames = _metric_lbl("Frame: 0", "#64748b")
+        self._lbl_err    = _metric_lbl("Error: — px", "#38bdf8")
+        self._lbl_mrad   = _metric_lbl("— mrad", "#94a3b8")
+        self._lbl_p95    = _metric_lbl("P95: — px", "#a855f7")
+        self._lbl_frames = _metric_lbl("Frame: 0", "#94a3b8")
 
         for w in (self._lbl_err, self._lbl_mrad, self._lbl_p95, self._lbl_frames):
             metrics_row.addWidget(w)
@@ -547,10 +701,13 @@ class Dashboard(QMainWindow):
     # ── Right panel ──────────────────────────────────────────────────────────
 
     def _build_right_panel(self) -> QWidget:
-        self._plots = PlotsPanel()
         grp = QGroupBox("REAL-TIME TELEMETRY")
+        grp.setObjectName("right_panel")
+        grp.setMinimumWidth(330)
         lay = QVBoxLayout(grp)
-        lay.setContentsMargins(4, 12, 4, 4)
+        lay.setContentsMargins(6, 12, 6, 6)
+        lay.setSpacing(6)
+        self._plots = PlotsPanel()
         lay.addWidget(self._plots)
         return grp
 
@@ -612,7 +769,7 @@ class Dashboard(QMainWindow):
 
         # Logger
         ts = time.strftime("%Y%m%d_%H%M%S")
-        log_path = self._log_dir / f"session_{ts}.csv"
+        log_path = self._logs_dir / f"session_{ts}.csv"
         self._fl_logger = FrameLogger(str(log_path), session_id=ts)
 
         # Worker
@@ -631,7 +788,11 @@ class Dashboard(QMainWindow):
         self._session_start = time.time()
         self._worker.start()
         self._set_running_state(True)
-        self._lbl_session.setText(f"Log: {log_path.name}")
+        try:
+            rel_log = log_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel_log = log_path.name
+        self._lbl_session.setText(f"Log: {rel_log}")
         self._status.showMessage(
             f"▶ Session started — Mode {mode_str}  |  "
             f"{'Simulator' if mode_str == 'A' else Path(self._mp4_path).name}"
@@ -662,10 +823,7 @@ class Dashboard(QMainWindow):
         self._show_placeholder()
         self._error_history.clear()
         self._badge.setText("IDLE")
-        self._badge.setStyleSheet(
-            "background:#f1f5f9; color:#64748b; border:1.5px solid #cbd5e1; "
-            "border-radius:6px; font:bold 13px 'Consolas'; padding:7px;"
-        )
+        self._badge.setStyleSheet(BADGE_STYLES["IDLE"])
         self._lbl_fps.setText("FPS: —")
         self._lbl_err.setText("Error: — px")
         self._lbl_mrad.setText("— mrad")
@@ -690,7 +848,7 @@ class Dashboard(QMainWindow):
         if not self._fl_logger._closed:
             self._fl_logger.flush()
         ts = time.strftime("%Y%m%d_%H%M%S")
-        pdf_path = self._log_dir / f"audit_{ts}.pdf"
+        pdf_path = self._reports_dir / f"audit_{ts}.pdf"
         meta = {
             "motion_type":    self._cmb_motion.currentText(),
             "atmospheric":    self._cmb_atmos.currentText(),
@@ -701,9 +859,15 @@ class Dashboard(QMainWindow):
         try:
             gen = ReportGenerator(self._fl_logger, meta)
             out = gen.generate(str(pdf_path))
-            self._status.showMessage(f"✅  PDF saved: {out}")
-            QMessageBox.information(self, "Audit Report Saved",
-                                    f"ISRO-compliant audit report saved to:\n{out}")
+            try:
+                rel_pdf = out.relative_to(PROJECT_ROOT).as_posix()
+            except ValueError:
+                rel_pdf = str(out)
+            self._status.showMessage(f"✅  PDF saved: {rel_pdf}")
+            QMessageBox.information(
+                self, "Audit Report Saved",
+                f"ISRO-compliant audit report saved to:\n{rel_pdf}"
+            )
         except Exception as exc:
             QMessageBox.critical(self, "PDF Error", str(exc))
             logger.exception("PDF generation error: %s", exc)
@@ -718,7 +882,7 @@ class Dashboard(QMainWindow):
             self._mp4_path = path
             name = Path(path).name
             self._lbl_mp4.setText(name)
-            self._lbl_mp4.setStyleSheet("color:#0369a1; font-size:10px;")
+            self._lbl_mp4.setStyleSheet("color:#38bdf8; font-size:10px;")
             self._status.showMessage(f"Mode B file: {name}")
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -743,42 +907,37 @@ class Dashboard(QMainWindow):
             sorted_err = sorted(self._error_history)
             p95_idx = max(0, int(len(sorted_err) * 0.95) - 1)
             p95 = sorted_err[p95_idx]
-            p95_color = "#7c3aed" if p95 <= 10.0 else "#b91c1c"
+            p95_color = "#a855f7" if p95 <= 10.0 else "#ef4444"
             self._lbl_p95.setText(f"P95: {p95:.1f} px")
             self._lbl_p95.setStyleSheet(
-                f"color:{p95_color}; font:bold 11px 'Consolas'; "
-                f"background:#f8fafc; border:1px solid #e2e8f0; "
-                f"border-radius:4px; padding:3px 8px;"
+                f"color:{p95_color}; font:bold 11px 'Consolas', monospace; "
+                f"background:#0d1322; border:1px solid #1f2937; "
+                f"border-radius:5px; padding:4px 10px;"
             )
 
-        err_color = "#0284c7" if err <= 10.0 else "#b91c1c"
+        err_color = "#38bdf8" if err <= 10.0 else "#ef4444"
         self._lbl_err.setText(f"Error: {err:.2f} px")
         self._lbl_err.setStyleSheet(
-            f"color:{err_color}; font:bold 11px 'Consolas'; "
-            f"background:#f8fafc; border:1px solid #e2e8f0; "
-            f"border-radius:4px; padding:3px 8px;"
+            f"color:{err_color}; font:bold 11px 'Consolas', monospace; "
+            f"background:#0d1322; border:1px solid #1f2937; "
+            f"border-radius:5px; padding:4px 10px;"
         )
         self._lbl_mrad.setText(f"{mrad:.3f} mrad")
         self._lbl_frames.setText(f"Frame: {fid}")
 
-        fps_color = "#15803d" if fps >= 30.0 else "#dc2626"
+        fps_color = "#4ade80" if fps >= 30.0 else "#f87171"
         self._lbl_fps.setText(f"FPS: {fps:.1f}")
         self._lbl_fps.setStyleSheet(
-            f"color:{fps_color}; font:bold 13px 'Consolas'; "
-            f"background:#{'f0fdf4' if fps >= 30.0 else 'fef2f2'}; "
-            f"border:1px solid #{'bbf7d0' if fps >= 30.0 else 'fca5a5'}; "
-            f"border-radius:4px; padding:4px;"
+            f"color:{fps_color}; font:bold 11px 'Consolas', monospace; "
+            f"background:#0b1a13; border:1px solid #14532d; "
+            f"border-radius:5px; padding:2px;"
         )
 
     @Slot(str)
     def _on_state_changed(self, state_name: str) -> None:
         self._badge.setText(state_name)
-        base = BADGE_STYLES.get(state_name,
-                                "background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;")
-        self._badge.setStyleSheet(
-            f"{base} border-radius:6px; font:bold 13px 'Consolas'; "
-            f"padding:7px; letter-spacing:2px;"
-        )
+        style = BADGE_STYLES.get(state_name, BADGE_STYLES["IDLE"])
+        self._badge.setStyleSheet(style)
         dur = time.time() - self._session_start
         self._status.showMessage(f"State → {state_name}   |   t = {dur:.1f} s")
 
@@ -817,11 +976,11 @@ class Dashboard(QMainWindow):
     def _show_placeholder(self) -> None:
         """Render a dark 'no signal' placeholder in the video label."""
         ph = np.zeros((480, 640, 3), dtype=np.uint8)
-        ph[:] = (15, 23, 42)   # slate-900
+        ph[:] = (11, 15, 25)   # #0b0f19 aerospace obsidian
         cv2.putText(ph, "NO SIGNAL", (185, 225),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.6, (30, 60, 100), 2, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.6, (40, 60, 90), 2, cv2.LINE_AA)
         cv2.putText(ph, "Configure source and press  START", (115, 272),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (45, 80, 130), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (60, 90, 130), 1, cv2.LINE_AA)
         self._video_label.setPixmap(_ndarray_to_pixmap(ph))
 
     # ─────────────────────────────────────────────────────────────────────────

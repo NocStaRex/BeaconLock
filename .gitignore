@@ -11,6 +11,9 @@ __pycache__/
 *.swp
 *.swo
 
+# Internal Documentation & Handoffs
+docs/
+
 # Virtual Environments
 venv/
 .venv/
@@ -22,6 +25,11 @@ evaluation/logs/*.csv
 evaluation/reports/*.pdf
 *.csv
 *.pdf
+
+# Video Artifacts (synthetic/test recordings)
+*.mp4
+*.avi
+tests/*.mp4
 
 # PyInstaller / Build Artifacts (Phase 4 packaging)
 build/

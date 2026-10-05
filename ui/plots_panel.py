@@ -6,9 +6,10 @@ Real-time PyQtGraph telemetry plot panel for BeaconLock.
 Three stacked plots:
   1. Tracking Error (px)   — rolling curve + red ISRO 10 px threshold line.
   2. Slew Velocity (°/s)   — pan (cyan) + tilt (purple) + ±5.0 °/s clamp lines.
-  3. FPS gauge             — rolling FPS EMA + 30-fps mandatory floor line.
+  3. FPS gauge             — rolling FPS EMA + 30-fps floor & 40-fps target lines.
 
-All plots use a dark aerospace theme matching the main dashboard.
+Theme: Deep Aerospace Obsidian (#0d1322) matching the telemetry cockpit.
+Labels: Non-clipping horizontal positions with explicit anchors.
 Data is stored in fixed-length deques (WINDOW frames) for O(1) updates.
 
 Slot update_plots(dict) is connected to TrackingWorker.metrics_ready.
@@ -24,15 +25,14 @@ from typing import Optional
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 # ── Plot configuration ────────────────────────────────────────────────────
-WINDOW       = 300      # rolling data window (frames)
-BG_COLOR     = "#0f172a"
-FG_COLOR     = "#94a3b8"
-GRID_COLOR   = "#1e293b"
-LABEL_COLOR  = "#e2e8f0"
+WINDOW       = 300        # rolling data window (frames)
+BG_COLOR     = "#0d1322"  # strictly matching console theme
+FG_COLOR     = "#94a3b8"  # slate-400
+GRID_COLOR   = "#1e293b"  # subtle slate-800 grid
+LABEL_COLOR  = "#f8fafc"  # crisp slate-50
 
 # Configure global PyQtGraph defaults before any PlotWidget is created
 pg.setConfigOptions(
@@ -55,7 +55,7 @@ class PlotsPanel(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setMinimumWidth(310)
+        self.setMinimumWidth(320)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Rolling data buffers
@@ -74,29 +74,26 @@ class PlotsPanel(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(6)
-
-        # ── Panel title ────────────────────────────────────────────
-        title = QLabel("TELEMETRY")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet(
-            "color: #94a3b8; font: bold 10px 'Consolas'; letter-spacing: 3px;"
-        )
-        layout.addWidget(title)
 
         # ── Plot 1: Tracking Error ─────────────────────────────────
         self.p_err = pg.PlotWidget()
         self._style_plot(self.p_err, "Tracking Error", "error (px)", y_range=(0, 40))
         self.c_err = self.p_err.plot(
-            pen=pg.mkPen("#22d3ee", width=2),
+            pen=pg.mkPen("#38bdf8", width=2),  # bright cyan
             name="Error",
         )
-        # ISRO 10 px threshold line
+        # ISRO 10 px threshold line — anchored inside the plot view to prevent right-edge clipping
         self.p_err.addItem(pg.InfiniteLine(
             pos=10, angle=0,
-            pen=pg.mkPen("#ef4444", width=1, style=Qt.PenStyle.DashLine),
-            label="ISRO 10 px", labelOpts={"color": "#ef4444", "position": 0.95},
+            pen=pg.mkPen("#ef4444", width=1.5, style=Qt.PenStyle.DashLine),
+            label="ISRO 10 px",
+            labelOpts={
+                "color": "#ef4444",
+                "position": 0.80,
+                "anchors": [(1.0, 1.2), (1.0, -0.2)],
+            },
         ))
         layout.addWidget(self.p_err)
 
@@ -109,7 +106,7 @@ class PlotsPanel(QWidget):
         for pos in (5.0, -5.0):
             self.p_slew.addItem(pg.InfiniteLine(
                 pos=pos, angle=0,
-                pen=pg.mkPen("#ef4444", width=1, style=Qt.PenStyle.DashLine),
+                pen=pg.mkPen("#ef4444", width=1.2, style=Qt.PenStyle.DashLine),
             ))
         layout.addWidget(self.p_slew)
 
@@ -117,17 +114,27 @@ class PlotsPanel(QWidget):
         self.p_fps = pg.PlotWidget()
         self._style_plot(self.p_fps, "Throughput", "FPS", y_range=(0, 200))
         self.c_fps = self.p_fps.plot(pen=pg.mkPen("#4ade80", width=2), name="FPS")
-        # 30 FPS mandatory floor
+        # 30 FPS mandatory floor — placed at position 0.85
         self.p_fps.addItem(pg.InfiniteLine(
             pos=30, angle=0,
-            pen=pg.mkPen("#f59e0b", width=1, style=Qt.PenStyle.DashLine),
-            label="30 FPS min", labelOpts={"color": "#f59e0b", "position": 0.95},
+            pen=pg.mkPen("#f59e0b", width=1.5, style=Qt.PenStyle.DashLine),
+            label="30 FPS min",
+            labelOpts={
+                "color": "#f59e0b",
+                "position": 0.85,
+                "anchors": [(1.0, 1.2), (1.0, -0.2)],
+            },
         ))
-        # 40 FPS target line
+        # 40 FPS target line — placed at position 0.55 to avoid overlapping 30 FPS label
         self.p_fps.addItem(pg.InfiniteLine(
             pos=40, angle=0,
-            pen=pg.mkPen("#22c55e", width=1, style=Qt.PenStyle.DotLine),
-            label="40 FPS target", labelOpts={"color": "#22c55e", "position": 0.75},
+            pen=pg.mkPen("#22c55e", width=1.5, style=Qt.PenStyle.DotLine),
+            label="40 FPS target",
+            labelOpts={
+                "color": "#22c55e",
+                "position": 0.55,
+                "anchors": [(1.0, -0.2), (1.0, 1.2)],
+            },
         ))
         layout.addWidget(self.p_fps)
 
@@ -138,17 +145,25 @@ class PlotsPanel(QWidget):
         y_label: str,
         y_range: tuple[float, float] = (0, 100),
     ) -> None:
-        """Apply consistent dark-theme styling to a PlotWidget."""
+        """Apply consistent deep aerospace obsidian styling to a PlotWidget."""
+        plot.setBackground(BG_COLOR)
         plot.setTitle(title, color=LABEL_COLOR, size="10pt")
         plot.setLabel("left", y_label, color=FG_COLOR)
-        plot.showGrid(x=False, y=True, alpha=0.25)
+        plot.showGrid(x=False, y=True, alpha=0.35)
         plot.setYRange(*y_range, padding=0.05)
         plot.setMenuEnabled(False)
         plot.setMouseEnabled(x=False, y=False)
-        plot.getPlotItem().getAxis("left").setTextPen(FG_COLOR)
-        plot.getPlotItem().getAxis("bottom").setTextPen(FG_COLOR)
-        # Remove x-axis numbers (rolling window — absolute frame index not meaningful)
-        plot.getPlotItem().getAxis("bottom").setStyle(showValues=False)
+
+        left_axis = plot.getPlotItem().getAxis("left")
+        left_axis.setTextPen(FG_COLOR)
+        left_axis.setPen(pg.mkPen(GRID_COLOR))
+        left_axis.setWidth(42)  # reserve fixed width so tick labels never clip
+
+        bottom_axis = plot.getPlotItem().getAxis("bottom")
+        bottom_axis.setTextPen(FG_COLOR)
+        bottom_axis.setPen(pg.mkPen(GRID_COLOR))
+        bottom_axis.setStyle(showValues=False)
+
         plot.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,

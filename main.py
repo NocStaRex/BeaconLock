@@ -289,9 +289,9 @@ def launch_gui() -> int:
     if _icon_path.exists():
         app.setWindowIcon(QIcon(str(_icon_path)))
 
-    # Apply global industrial stylesheet
-    from ui.dashboard import LIGHT_STYLESHEET
-    app.setStyleSheet(LIGHT_STYLESHEET)
+    # Apply global aerospace obsidian stylesheet
+    from ui.dashboard import AEROSPACE_THEME_STYLESHEET
+    app.setStyleSheet(AEROSPACE_THEME_STYLESHEET)
 
     # Launch main window
     from ui.dashboard import Dashboard
@@ -308,6 +308,13 @@ def launch_gui() -> int:
 
 if __name__ == "__main__":
     if "--headless-check" in sys.argv:
+        try:
+            import ctypes
+            if ctypes.windll.kernel32.AttachConsole(-1):
+                sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+        except Exception:
+            pass
         sys.exit(run_headless_check())
     else:
         sys.exit(launch_gui())
