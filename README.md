@@ -3,7 +3,7 @@
 <div align="center">
 
 [![SIH 2026](https://img.shields.io/badge/Smart%20India%20Hackathon-2026-orange?style=for-the-badge)](https://www.sih.gov.in/)
-[![PS-26169](https://img.shields.io/badge/Problem%20Statement-PS--26169-blue?style=for-the-badge)](https://www.sih.gov.in/)
+[![PS-26169](https://img.shields.io/badge/Problem%20Statement-PS--26169-blue?style=for-the-badge)](https://www.sih.gov.in/sih2026PS)
 [![Organisation](https://img.shields.io/badge/Organisation-ISRO%20%7C%20Dept.%20of%20Space-navy?style=for-the-badge)](https://www.isro.gov.in/)
 ![Team AlphaTrion](https://img.shields.io/badge/Team-AlphaTrion%20%7C%20ID%20176697-green?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Hardware-CPU%20Only%20%7C%20Zero%20GPU-success?style=for-the-badge)
