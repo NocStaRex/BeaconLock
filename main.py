@@ -25,6 +25,16 @@ import time
 import tempfile
 from pathlib import Path
 
+# Force UTF-8 encoding on standard streams to prevent Windows cp1252 charmap errors
+if sys.platform == "win32":
+    try:
+        if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ── Ensure project root is on sys.path ───────────────────────────────────
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
@@ -73,9 +83,9 @@ def run_headless_check() -> int:
             print(f"  \033[91m[FAIL]\033[0m {name}")
 
     print("\n\033[1m\033[96m"
-          "══════════════════════════════════════════════════════════\n"
-          "  BEACONLOCK PHASE 3 — HEADLESS CHECK\n"
-          "══════════════════════════════════════════════════════════"
+          "==========================================================\n"
+          "  BEACONLOCK PHASE 3 - HEADLESS CHECK\n"
+          "=========================================================="
           "\033[0m\n")
 
     # ── T1: State Machine ─────────────────────────────────────────────
@@ -310,9 +320,9 @@ if __name__ == "__main__":
     if "--headless-check" in sys.argv:
         try:
             import ctypes
-            if ctypes.windll.kernel32.AttachConsole(-1):
-                sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
-                sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+            ctypes.windll.kernel32.AttachConsole(-1)
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
         except Exception:
             pass
         sys.exit(run_headless_check())

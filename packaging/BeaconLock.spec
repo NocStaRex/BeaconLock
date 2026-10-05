@@ -17,7 +17,23 @@ datas = [
     (os.path.join(PROJECT_ROOT, "ui", "assets", "icon.png"), os.path.join("ui", "assets")),
 ]
 
+from PyInstaller.utils.hooks import collect_submodules
+
 hiddenimports = [
+    "scipy",
+    "scipy.linalg",
+    "scipy.spatial.transform",
+    "filterpy",
+    "filterpy.kalman",
+    "filterpy.kalman.kalman_filter",
+    "filterpy.common",
+    "numpy",
+    "cv2",
+    "PySide6",
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "pyqtgraph",
     "reportlab",
     "reportlab.lib",
     "reportlab.lib.colors",
@@ -27,28 +43,21 @@ hiddenimports = [
     "reportlab.platypus",
     "reportlab.platypus.paragraph",
     "reportlab.platypus.tables",
-    "PySide6",
-    "PySide6.QtCore",
-    "PySide6.QtGui",
-    "PySide6.QtWidgets",
-    "pyqtgraph",
-    "cv2",
-    "numpy",
-    "filterpy",
-    "filterpy.kalman",
     "pandas",
     "yaml",
     "PIL",
+    "unittest",
+] + [
+    m for m in collect_submodules("scipy._external")
+    if not any(x in m for x in ("torch", "cupy", "jax", "dask"))
 ]
 
-# Exclude unnecessary dev/test dependencies for a lean binary
+# Exclude unnecessary dev/test dependencies for a lean binary (DO NOT exclude scipy or unittest)
 excludes = [
     "tests",
     "pytest",
-    "unittest",
     "tkinter",
     "matplotlib",
-    "scipy",
     "IPython",
     "jupyter",
     "sqlite3",

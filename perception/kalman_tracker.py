@@ -42,7 +42,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from filterpy.kalman import KalmanFilter
+try:
+    from filterpy.kalman.kalman_filter import KalmanFilter
+except ImportError:
+    from filterpy.kalman import KalmanFilter
 
 logger = logging.getLogger(__name__)
 
