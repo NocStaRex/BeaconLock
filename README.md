@@ -20,6 +20,13 @@
 
 The software features a strictly decoupled four-tier architecture, combining radiometric sub-pixel centroiding, a 6-state constant-acceleration Kalman filter, rate-saturated kinematic actuation, and an aerospace telemetry dashboard. The entire tracking and control loop executes at **over 140 FPS on standard multi-core CPUs with zero GPU dependency**, exceeding ISRO's mandatory 20 FPS threshold by more than 700%.
 
+<div align="center">
+  <br/>
+  <img src="ui/assets/dashboard_live_tracking.png" alt="BeaconLock Live Telemetry Cockpit" width="100%">
+  <p><em>BeaconLock live telemetry cockpit running closed-loop coarse acquisition on a stochastic random-walk beacon (~78 FPS throughput, < 10 px tracking error lock).</em></p>
+  <br/>
+</div>
+
 ---
 
 ## 4-Tier Decoupled System Architecture
